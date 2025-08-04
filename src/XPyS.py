@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import lmfit
 import matplotlib as mpl
-import lmfitxps.models
+import lmfitxps.backgrounds
 import MoreModels
 
 from DataImport import load_specslab_xy_with_error_bars, load_specslab_xy
@@ -17,26 +17,23 @@ data = load_specslab_xy(os.path.join(examples_path, 'Cathode Constituents Carbon
 x = data[:,0]
 y = data[:,1]
 
-background = lmfitxps.models.ShirleyBG(independent_vars=["y"], prefix="shirley_")
-# asymmetric_peak = MoreModels.ConvGaussianSplitLorentz(independent_vars=["x"], prefix="asymm_")
-# voigt_peak = lmfit.models.VoigtModel(independent_vars=["x"], prefix="voigt_")
-# fit_model = background + asymmetric_peak + voigt_peak
+background = lmfitxps.backgrounds.shirley_calculate(x, y, maxit=100)
+asymmetric_peak = MoreModels.ConvGaussianSplitLorentz(independent_vars=["x"], prefix="asymm_")
+voigt_peak = lmfit.models.VoigtModel(independent_vars=["x"], prefix="voigt_")
+fit_model = asymmetric_peak + voigt_peak
 
 params = lmfit.Parameters()
-params.add('shirley_k', value=0.002)
-params.add('shirley_const', value=100)
-# params.add('asymm_amplitude', value=2500, min=0)
-# params.add('asymm_center', value=1202.3)
-# params.add('asymm_sigma', value=0.7, min=0)
-# params.add('asymm_sigma_r', value=1, min=0)
-# params.add('asymm_gaussian_sigma', value=10, min=0)
-# params.add('voigt_amplitude', value=1000, min=0)
-# params.add('voigt_center', value=1201.8)
-# params.add('voigt_sigma', value=5, min=0)
-# params.add('voigt_gamma', value=2, min=0)
+params.add('asymm_amplitude', value=2500, min=0)
+params.add('asymm_center', value=1202.3)
+params.add('asymm_sigma', value=0.7, min=0)
+params.add('asymm_sigma_r', value=1, min=0)
+params.add('asymm_gaussian_sigma', value=10, min=0)
+params.add('voigt_amplitude', value=1000, min=0)
+params.add('voigt_center', value=1201.8)
+params.add('voigt_sigma', value=5, min=0)
+params.add('voigt_gamma', value=2, min=0)
 
-# result = fit_model.fit(y, params, y=y, x=x, weights=1 /(np.sqrt(y)))
-result = background.fit(y, params, y=y, x=x)
+result = fit_model.fit(y, params, x=x, weights=1 /(np.sqrt(y)))
 comps = result.eval_components(x=x, y=y)
 print(result.fit_report())
 
@@ -46,11 +43,11 @@ cmap = mpl.colormaps['tab20']
 ax1.plot(x, result.best_fit, label='Best Fit', color=cmap(0))
 ax1.plot(x, y, 'x', markersize=4, label='Data Points', color=cmap(2))
 
-ax1.plot(x, comps['shirley_'], label='Shirley background', color='black')
-#ax1.plot(x, comps['asymm_'] + comps['shirley_'], color=cmap(4), label="Asymmetric peak")
-#ax1.plot(x, comps['voigt_'] + comps['shirley_'], color=cmap(4), label="Voigt peak")
+ax1.plot(x, background, label='Shirley background', color='black')
+ax1.plot(x, comps['asymm_'] + background, color=cmap(4), label="Asymmetric peak")
+ax1.plot(x, comps['voigt_'] + background, color=cmap(5), label="Voigt peak")
 
-#ax1.fill_between(x, comps['asymm_'] + comps['shirley_'], comps['shirley_'], alpha=0.5,color=cmap(5))
+#ax1.fill_between(x, comps['asymm_'] + background, background, alpha=0.5,color=cmap(5))
 ax1.legend()
 ax1.set_xlabel('kinetic energy in eV')
 ax1.set_ylabel('intensity in arb. units')
