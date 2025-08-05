@@ -1,8 +1,81 @@
 import sys
+from argparse import ArgumentError
+from multiprocessing.util import is_abstract_socket_namespace
+
+import numpy as np
+import lmfit.models
 from PyQt6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QLabel, QMessageBox, QLineEdit, QSlider, QHBoxLayout, QSizePolicy, QGridLayout
+    QApplication, QWidget, QVBoxLayout, QLabel, QMessageBox, QLineEdit, QSlider, QHBoxLayout, QSizePolicy, QGridLayout,
+    QGroupBox, QFormLayout
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QObject
+from lmfit import models
+import MoreModels
+from dataclasses import dataclass
+
+@dataclass
+class BoundedValue:
+    value: float
+    min_val: float
+    max_val: float
+
+    def set_value(self, new_value):
+        if new_value < self.min_val:
+            self.value = self.min_val
+        elif new_value > self.max_val:
+            self.value = self.max_val
+        else:
+            self.value = new_value
+
+    def set_min(self, new_min):
+        if new_min < self.max_val:
+            self.min_val = new_min
+            self.set_value(self.value)
+
+    def set_max(self, new_max):
+        if new_max > self.min_val:
+            self.max_val = new_max
+            self.set_value(self.value)
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        """
+        Create an instance from a dictionary.
+        Expects keys: 'value', 'min', 'max'.
+        """
+        if "value" in data.keys():
+            if ("min" not in data.keys()) and ("max" not in data.keys()):
+                data["min"] = min(0, data["value"] * 2)
+                data["max"] = max(0, data["value"] * 2)
+            elif "min" not in data.keys():
+                data["min"] = data["max"] - abs(data["value"] * 2)
+            elif "max" not in data.keys():
+                data["max"] = data["min"] + abs(data["value"] * 2)
+        elif "min" in data.keys():
+            # value isn't in dict
+            if "max" not in data.keys():
+                if data["min"] >= 0:
+                    data["max"] = (data["min"] + 0.5) * 2
+                else:
+                    data["max"] = 0
+            data["value"] = 0.5 * (data["min"] + data["max"])
+        elif "max" in data.keys():
+            # value isn't in dict
+            if "min" not in data.keys():
+                if data["max"] >= 0:
+                    data["min"] = (data["max"] - 1) / 2
+                else:
+                    data["min"] = 0
+            data["value"] = 0.5 * (data["min"] + data["max"])
+        else:
+            raise ArgumentError(None, "Dictionary had none of \"min\", \"max\", or \"value\"")
+
+        return cls(
+            value=data.get('value'),
+            min_val=data.get('min'),
+            max_val=data.get('max'),
+        )
+
 
 class QSliderLineEdit(QLineEdit):
     def __init__(self, *args, **kwargs):
@@ -24,7 +97,8 @@ class QSliderLineEdit(QLineEdit):
 
 class QAdjustableSlider(QWidget):
     valueChanged = pyqtSignal(float)
-    def __init__(self, min_val=0.0, max_val=100.0, step=0.1, initial=0.0, decimals=2, parent=None):
+    limit_changed = pyqtSignal(float, float)  # min value, max value
+    def __init__(self, min_val=0.0, max_val=100.0, step = 0.01, initial=0.0, decimals=2, parent=None):
         super().__init__(parent)
 
         self.min_val = min_val
@@ -40,8 +114,8 @@ class QAdjustableSlider(QWidget):
         # Slider in top-left cell
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setMinimum(0)
-        self.slider.setMaximum(int((max_val - min_val) / step))
-        self.slider.setValue(int((initial - min_val) / step))
+        self.slider.setMaximum(int((max_val - min_val) / self.step))
+        self.slider.setValue(int((initial - min_val) / self.step))
         self.slider.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout.addWidget(self.slider, 0, 0)
 
@@ -165,6 +239,7 @@ class QAdjustableSlider(QWidget):
         self.min_edit.setText(f"{self.min_val:.{self.decimals}f}")
         self.max_edit.setText(f"{self.max_val:.{self.decimals}f}")
 
+        self.limit_changed.emit(self.min_val, self.max_val)
         self._internal_update = False
 
     def reset_min_edit(self):
@@ -178,11 +253,144 @@ class QAdjustableSlider(QWidget):
         self.value_edit.setText(f"{value:.{self.decimals}f}")
         self.value_edit.set_to_font_width()
 
+    def set_from_bounded_value(self, bounded_value):
+        assert isinstance(bounded_value, BoundedValue)
+        self.slider.setValue(bounded_value.value)
+        self.min_edit.setText(str(bounded_value.min_val))
+        self.max_edit.setText(str(bounded_value.max_val))
+
+
     def value(self):
         try:
             return float(self.value_edit.text())
         except ValueError:
             return self.min_val
+
+class PeakDataModel(QObject):
+    param_changed = pyqtSignal(str, object)  # param_name, new_value
+    name_changed = pyqtSignal(str)                  # new_value
+
+    def __init__(self, peak_model: lmfit.Model):
+        super().__init__()
+        self._peak_model = peak_model
+        self._params = {}               # {str: BoundedValue}
+        self._peak_name = peak_model.prefix
+        self._internal_update = False
+
+        param_hints = getattr(peak_model, "param_hints", {})
+        for param_name in peak_model.param_names:
+            # adding detail to the param_hints to get a fully fleshed out dict params = {name: {min: , max:, value: }}
+            hint = param_hints.get(param_name.removeprefix(peak_model.prefix), {})
+            if hint=={}:
+                hint["value"] = peak_model.def_vals.get(param_name.removeprefix(peak_model.prefix), 1)
+            try:
+                value = BoundedValue.from_dict(hint)
+                self._params[param_name] = value
+            except ArgumentError:
+                pass
+
+    def set_name(self, name):
+        if self._internal_update:
+            return
+        self._internal_update = True
+        self._peak_name = name
+        self.name_changed.emit(name)
+        self._internal_update = False
+
+    def get_name(self):
+        return self._peak_name
+
+    def get_all_params(self):
+        return self._params
+
+    def get_param(self, name):
+        return self._params[name]
+
+    def set_param(self, name, value: BoundedValue):
+        if self._internal_update:
+            return
+        self._internal_update = True
+        if name in self._params:
+            self._params[name] = value
+            self.param_changed.emit(name, value)
+
+        self._internal_update = False
+
+    def make_model_parameters(self):
+        model_params = lmfit.Parameters()
+        for k,v in self._params.items():
+            assert isinstance(v, BoundedValue)
+            model_params.add(k, min=v.min_val, max=v.max_val, value=v.value)
+        return model_params
+
+    def evaluate(self, x, **kwargs):
+        return self._peak_model.eval(params=self.make_model_parameters(), x=x, **kwargs)
+
+
+class QModelParamGroup(QGroupBox):
+    def __init__(self, peak_model: PeakDataModel, parent=None):
+        super().__init__(parent)
+        self.peak_model = peak_model
+        self.setTitle(self.peak_model.get_name())
+        self._internal_update = False
+
+        layout = QFormLayout()
+
+        self.sliders = {}
+
+        for name, value in peak_model.get_all_params().items():
+            # Custom slider
+            assert isinstance(value, BoundedValue)
+            slider = QAdjustableSlider(min_val=value.min_val, max_val=value.max_val, initial=value.value)
+            self.sliders[name] = slider
+
+            # Label with the parameter name
+            label = QLabel(name.removeprefix(self.peak_model.get_name()).title())
+            label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+
+            # Connect slider value changes to model
+            slider.valueChanged.connect(lambda val, n=name: self._update_model_value(n, val))
+            slider.limit_changed.connect(lambda min_val, max_val, n=name:
+                                         self._update_model_lims(n, (min_val, max_val))
+                                         )
+
+            layout.addRow(label, slider)
+
+        self.setLayout(layout)
+
+        # Connect model changes to slider updates
+        self.peak_model.param_changed.connect(self._on_param_changed)
+
+    def _on_param_changed(self, name, value):
+        if self._internal_update:
+            return
+        self._internal_update = True
+        slider = self.sliders.get(name)
+        if slider:
+            slider.slider.setValue(value["value"])
+            slider.min_edit.setText(str(value["min"]))
+            slider.max_edit.setText(str(value["max"]))
+        self._internal_update = False
+
+    def _update_model_value(self, name, value):
+        if self._internal_update:
+            return
+        self._internal_update = True
+        curr_bv = self.peak_model.get_param(name)
+        curr_bv.set_value(value)
+        self.peak_model.set_param(name, curr_bv)
+        self._internal_update = False
+
+    def _update_model_lims(self, name, value):
+        if self._internal_update:
+            return
+        self._internal_update = True
+        curr_bv = self.peak_model.get_param(name)
+        curr_bv.set_min(value[0])
+        curr_bv.set_max(value[1])
+        self.peak_model.set_param(name, curr_bv)
+        self._internal_update = False
+
 
 
 if __name__ == "__main__":
@@ -190,17 +398,22 @@ if __name__ == "__main__":
 
     window = QWidget()
     window.setWindowTitle("QAdjustableSlider Demo")
-    layout = QVBoxLayout(window)
+    layout = QHBoxLayout(window)
 
-    slider_widget = QAdjustableSlider(min_val=0, max_val=5, step=0.01, initial=2.5)
-    layout.addWidget(slider_widget)
+    vp = lmfit.models.VoigtModel(prefix="Voigt1_")
+    cgp = MoreModels.ConvGaussianSplitLorentz(prefix="ConvGauss1_")
 
-    label = QLabel()
-    layout.addWidget(label)
-    def spam(val):
-        label.setText(f"Slider value is: {val}")
+    ps = lmfit.Parameters()
+    ps.add("Voigt1_amplitude", value=100)
+    ps.add("Voigt1_centre", value=10)
+    ps.add("Voigt1_sigma", value=1)
+    ev = vp.eval(params=ps, x=np.linspace(-50,50,100))
 
-    slider_widget.valueChanged.connect(lambda v: spam(v))
+    peak_group_voigt = QModelParamGroup(PeakDataModel(vp))
+    peak_group_cgp = QModelParamGroup(PeakDataModel(cgp))
+
+    layout.addWidget(peak_group_cgp)
+    layout.addWidget(peak_group_voigt)
 
     window.show()
     sys.exit(app.exec())
