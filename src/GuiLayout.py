@@ -1,7 +1,8 @@
+import os.path
 import sys
 import numpy as np
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QMessageBox,
     QPushButton, QFileDialog, QLabel, QSlider, QGroupBox, QGridLayout, QMenuBar, QMenu
 )
 from PyQt6.QtGui import QAction
@@ -9,12 +10,8 @@ from PyQt6.QtCore import Qt
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+import DataImport
 
-def load_data(filepath):
-    # Dummy loader: replace with your real implementation
-    x = np.linspace(0, 100, 1000)
-    y = np.sin(x / 10) + np.random.normal(0, 0.1, len(x))
-    return x, y
 
 def calculate_peaks(x, params1, params2, params3):
     # Dummy peak calculator: replace with your real implementation
@@ -35,6 +32,7 @@ class PeakFitter(QMainWindow):
 
         self.x = np.array([])
         self.y = np.array([])
+        self.err_bars = np.array([])
 
         self.params1 = [5, 1, 1]
         self.params2 = [1, 50, 5, 1, 1]
@@ -85,7 +83,7 @@ class PeakFitter(QMainWindow):
             label = QLabel(f"{val:.2f}")
             slider = QSlider(Qt.Orientation.Horizontal)
             slider.setMinimum(0)
-            slider.setMaximum(1000)
+            slider.setMaximum(10000)
             slider.setValue(int(val * 10))
             slider.valueChanged.connect(lambda val, i=i, label=label, name=name: self.slider_changed(name, i, val, label, callback))
             layout.addWidget(QLabel(f"{name}[{i}]:"), i, 0)
@@ -102,9 +100,27 @@ class PeakFitter(QMainWindow):
         callback()
 
     def open_file(self):
-        filepath, _ = QFileDialog.getOpenFileName(self, "Open Data File", "", "Data Files (*.txt *.csv *.dat);;All Files (*)")
+        filepath, _ = QFileDialog.getOpenFileName(self, "Open Data File", "", "Data Files (*.txt *.csv *.dat *.xy);;All Files (*)")
         if filepath:
-            self.x, self.y = load_data(filepath)
+            _,ext = os.path.splitext(filepath)
+            incl_errs = False
+            if ext == ".xy":
+                result = QMessageBox.question(None, "", "Do you want to include error bars?",
+                                              QMessageBox.StandardButton.Yes |
+                                              QMessageBox.StandardButton.No |
+                                              QMessageBox.StandardButton.Cancel)
+                if result == QMessageBox.StandardButton.Yes:
+                    incl_errs = True
+                elif result == QMessageBox.StandardButton.Cancel:
+                    return
+            if incl_errs:
+                data, self.err_bars = DataImport.load_specslab_xy_with_error_bars(filepath)
+            else:
+                data = DataImport.load_specslab_xy(filepath)
+                self.err_bars = None
+
+            self.x = data[:,0]
+            self.y = data[:,1]
             self.update_plot()
 
     def update_plot(self):
