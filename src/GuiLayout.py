@@ -10,7 +10,10 @@ from PyQt6.QtCore import Qt
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from numpy.ma.core import minimum
+
 import DataImport
+import CustomWidgets
 
 
 def calculate_peaks(x, params1, params2, params3):
@@ -79,24 +82,20 @@ class PeakFitter(QMainWindow):
         self.sliders = getattr(self, 'sliders', {})
         self.sliders[name] = []
 
+        temp_param_names = ["Amplitude", "Centre", "Width", "NA", "NA"]
+
         for i, val in enumerate(param_list):
-            label = QLabel(f"{val:.2f}")
-            slider = QSlider(Qt.Orientation.Horizontal)
-            slider.setMinimum(0)
-            slider.setMaximum(10000)
-            slider.setValue(int(val * 10))
-            slider.valueChanged.connect(lambda val, i=i, label=label, name=name: self.slider_changed(name, i, val, label, callback))
-            layout.addWidget(QLabel(f"{name}[{i}]:"), i, 0)
+            slider = CustomWidgets.QAdjustableSlider(min_val=0.0, max_val=100.0, step=0.1, initial=val, decimals=2)
+            slider.valueChanged.connect(lambda v, idx=i, n=name: self.slider_changed(n, idx, v, callback))
+            layout.addWidget(QLabel(f"{temp_param_names[i]}:"), i, 0)
             layout.addWidget(slider, i, 1)
-            layout.addWidget(label, i, 2)
             self.sliders[name].append(slider)
 
         group_box.setLayout(layout)
         return group_box
 
-    def slider_changed(self, group, idx, value, label, callback):
-        label.setText(f"{value / 10:.2f}")
-        getattr(self, group.lower())[idx] = value / 10
+    def slider_changed(self, group, idx, value, callback):
+        getattr(self, group.lower())[idx] = value
         callback()
 
     def open_file(self):
