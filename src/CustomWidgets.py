@@ -1,6 +1,5 @@
 import sys
 from argparse import ArgumentError
-from multiprocessing.util import is_abstract_socket_namespace
 
 import numpy as np
 import lmfit.models
@@ -9,7 +8,6 @@ from PyQt6.QtWidgets import (
     QGroupBox, QFormLayout
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QObject
-from lmfit import models
 import MoreModels
 from dataclasses import dataclass
 
@@ -402,7 +400,7 @@ if __name__ == "__main__":
 
     vp = lmfit.models.VoigtModel(prefix="Voigt1_")
     cgp = MoreModels.ConvGaussianSplitLorentz(prefix="ConvGauss1_")
-
+    bkg =
     ps = lmfit.Parameters()
     ps.add("Voigt1_amplitude", value=100)
     ps.add("Voigt1_centre", value=10)

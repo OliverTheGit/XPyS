@@ -1,21 +1,21 @@
 import numpy as np
 
-def load_specslab_xy(
-    filepath: str,
-    comment_prefix: str = '#',
-    delimiter = None,
-    apply_transmission: bool = False
-) -> np.ndarray:
 
+def load_specslab_xy(
+        filepath: str,
+        comment_prefix: str = '#',
+        delimiter=None,
+        apply_transmission: bool = False
+) -> np.ndarray:
     result, _ = load_specslab_xy_with_error_bars(filepath, comment_prefix, delimiter, apply_transmission)
     return result
 
 
 def load_specslab_xy_with_error_bars(
-    filepath: str,
-    comment_prefix: str = '#',
-    delimiter = None,
-    apply_transmission: bool = False
+        filepath: str,
+        comment_prefix: str = '#',
+        delimiter=None,
+        apply_transmission: bool = False
 ) -> tuple[np.ndarray, np.ndarray]:
     wip_flags = {
         "Separate Scan Data": "yes",
@@ -50,7 +50,7 @@ def load_specslab_xy_with_error_bars(
         raise ValueError("Required columns 'energy' and 'counts/s' not found.")
 
     # Filter data lines
-    data = np.loadtxt(filepath, comments=comment_prefix,delimiter=delimiter)
+    data = np.loadtxt(filepath, comments=comment_prefix, delimiter=delimiter)
 
     # Extract required columns
     energy = data[:, col_indices['energy']]
@@ -71,4 +71,3 @@ def load_specslab_xy_with_error_bars(
         error_bar = data[:, 0] * 0
 
     return result, error_bar
-

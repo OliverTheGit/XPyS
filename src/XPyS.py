@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import lmfit
 import matplotlib as mpl
 import lmfitxps.backgrounds
+import lmfitxps.models
 import MoreModels
 from DataImport import load_specslab_xy_with_error_bars, load_specslab_xy
 

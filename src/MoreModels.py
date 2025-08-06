@@ -21,7 +21,7 @@ def split_lorentz_conv_gauss(x,
 
 class ConvGaussianSplitLorentz(lmfit.model.Model):
     __doc__ = ("""
-       A model based on a convolution of a Gaussian and a Split Lorentzian profile.
+       A model is a convolution of a Gaussian and a Split Lorentzian profile.
        This was entirely based on the lmfitxps models and is intended to mimic CasaXPS LA(alpha, beta, m)
        
        .. table:: Model-specific available parameters

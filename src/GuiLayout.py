@@ -14,6 +14,8 @@ from numpy.ma.core import minimum
 
 import DataImport
 import CustomWidgets
+import MoreModels
+import lmfit
 
 
 def calculate_peaks(x, params1, params2, params3):
@@ -24,9 +26,11 @@ def calculate_peaks(x, params1, params2, params3):
     peaks += params3[0] * np.exp(-(x - params3[1]) ** 2 / (2 * params3[2] ** 2))  # Gaussian
     return peaks
 
+
 def optimise_parameters(x, y):
     # Dummy optimizer: replace with your real implementation
     return [5, 1, 1], [1, 50, 5, 1, 1], [2, 50, 5, 1]
+
 
 class PeakFitter(QMainWindow):
     def __init__(self):
@@ -37,9 +41,7 @@ class PeakFitter(QMainWindow):
         self.y = np.array([])
         self.err_bars = np.array([])
 
-        self.params1 = [5, 1, 1]
-        self.params2 = [1, 50, 5, 1, 1]
-        self.params3 = [2, 50, 5, 1]
+        self.components = [lmfit.models.VoigtModel(prefix="Voigt1_"), MoreModels.ConvGaussianSplitLorentz(prefix="ConvGauss1_")]
 
         self.init_ui()
 
@@ -99,9 +101,10 @@ class PeakFitter(QMainWindow):
         callback()
 
     def open_file(self):
-        filepath, _ = QFileDialog.getOpenFileName(self, "Open Data File", "", "Data Files (*.txt *.csv *.dat *.xy);;All Files (*)")
+        filepath, _ = QFileDialog.getOpenFileName(self, "Open Data File", "",
+                                                  "Data Files (*.txt *.csv *.dat *.xy);;All Files (*)")
         if filepath:
-            _,ext = os.path.splitext(filepath)
+            _, ext = os.path.splitext(filepath)
             incl_errs = False
             if ext == ".xy":
                 result = QMessageBox.question(None, "", "Do you want to include error bars?",
@@ -118,8 +121,8 @@ class PeakFitter(QMainWindow):
                 data = DataImport.load_specslab_xy(filepath)
                 self.err_bars = None
 
-            self.x = data[:,0]
-            self.y = data[:,1]
+            self.x = data[:, 0]
+            self.y = data[:, 1]
             self.update_plot()
 
     def update_plot(self):
