@@ -278,6 +278,9 @@ class PeakDataModel(QObject):
         param_hints = getattr(peak_model, "param_hints", {})
         for param_name in peak_model.param_names:
             # adding detail to the param_hints to get a fully fleshed out dict params = {name: {min: , max:, value: }}
+            if param_name.removeprefix(peak_model.prefix) in peak_model.independent_vars:
+                continue
+
             hint = param_hints.get(param_name.removeprefix(peak_model.prefix), {})
             if hint=={}:
                 hint["value"] = peak_model.def_vals.get(param_name.removeprefix(peak_model.prefix), 1)
@@ -322,6 +325,9 @@ class PeakDataModel(QObject):
         return model_params
 
     def evaluate(self, x, **kwargs):
+        if ('y' in self._peak_model.independent_vars) and (kwargs.get('y') is None):
+            raise TypeError("This model requires y as an independent value to be passed via kwargs")
+
         return self._peak_model.eval(params=self.make_model_parameters(), x=x, **kwargs)
 
 
@@ -332,7 +338,7 @@ class QModelParamGroup(QGroupBox):
         self.setTitle(self.peak_model.get_name())
         self._internal_update = False
 
-        layout = QFormLayout()
+        form_layout = QFormLayout()
 
         self.sliders = {}
 
@@ -352,9 +358,9 @@ class QModelParamGroup(QGroupBox):
                                          self._update_model_lims(n, (min_val, max_val))
                                          )
 
-            layout.addRow(label, slider)
+            form_layout.addRow(label, slider)
 
-        self.setLayout(layout)
+        self.setLayout(form_layout)
 
         # Connect model changes to slider updates
         self.peak_model.param_changed.connect(self._on_param_changed)
@@ -400,18 +406,15 @@ if __name__ == "__main__":
 
     vp = lmfit.models.VoigtModel(prefix="Voigt1_")
     cgp = MoreModels.ConvGaussianSplitLorentz(prefix="ConvGauss1_")
-    bkg =
-    ps = lmfit.Parameters()
-    ps.add("Voigt1_amplitude", value=100)
-    ps.add("Voigt1_centre", value=10)
-    ps.add("Voigt1_sigma", value=1)
-    ev = vp.eval(params=ps, x=np.linspace(-50,50,100))
+    bkg = MoreModels.Shirley(prefix="Shirley_")
 
     peak_group_voigt = QModelParamGroup(PeakDataModel(vp))
     peak_group_cgp = QModelParamGroup(PeakDataModel(cgp))
-
+    param_group_bkg = QModelParamGroup(PeakDataModel(bkg))
     layout.addWidget(peak_group_cgp)
     layout.addWidget(peak_group_voigt)
+    layout.addWidget(param_group_bkg)
+
 
     window.show()
     sys.exit(app.exec())
