@@ -62,6 +62,10 @@ class PeakFitter(QMainWindow):
         peak_group_cgp.paramChanged.connect(self.update_plot)
         param_group_bkg.paramChanged.connect(self.update_plot)
 
+        peak_group_voigt.request_deletion.connect(self.delete_model)
+        peak_group_cgp.request_deletion.connect(self.delete_model)
+        param_group_bkg.request_deletion.connect(self.delete_model)
+
         self.models = {"Voigt1_": peak_group_voigt, "ConvGauss1_": peak_group_cgp, "Shirley_": param_group_bkg}
         for m in self.models.values():
             controls.addWidget(m)
@@ -83,6 +87,14 @@ class PeakFitter(QMainWindow):
     def slider_changed(self, group, idx, value, callback):
         getattr(self, group.lower())[idx] = value
         callback()
+
+    def delete_model(self, name):
+        if name not in self.models.keys():
+            raise ValueError(f"{name} not in self.models")
+        model_to_delete = self.models.pop(name)
+        model_to_delete.hide()
+        model_to_delete.deleteLater()
+        self.update_plot()
 
     def open_file(self):
         # commented out to quickly load test data during development

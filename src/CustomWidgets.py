@@ -1,15 +1,14 @@
-import sys
 from argparse import ArgumentError
+from dataclasses import dataclass
 
-import numpy as np
 import lmfit.models
+from PyQt6.QtCore import Qt, pyqtSignal, QObject, QPoint
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QMessageBox, QLineEdit, QSlider, QHBoxLayout, QSizePolicy, QGridLayout,
-    QGroupBox, QFormLayout
+    QGroupBox, QFormLayout, QMenu
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QObject
-import MoreModels
-from dataclasses import dataclass
+from lmfit.models import VoigtModel
+
 
 @dataclass
 class BoundedValue:
@@ -340,6 +339,7 @@ class PeakDataModel(QObject):
 
 class QModelParamGroup(QGroupBox):
     paramChanged = pyqtSignal(str)
+    request_deletion = pyqtSignal(str)
     def __init__(self, peak_model: PeakDataModel, parent=None):
         super().__init__(parent)
         self.peak_model = peak_model
@@ -373,6 +373,10 @@ class QModelParamGroup(QGroupBox):
         # Connect model changes to slider updates
         self.peak_model.param_changed.connect(self._on_param_changed)
 
+        # Enable context menu events
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_context_menu)
+
     def _on_param_changed(self, name, value):
         if self._internal_update:
             return
@@ -405,26 +409,30 @@ class QModelParamGroup(QGroupBox):
         self.peak_model.set_param(name, curr_bv)
         self._internal_update = False
 
+    def show_context_menu(self, position: QPoint):
+        menu = QMenu(self)
+        delete_action = menu.addAction("Delete...")
+        action = menu.exec(self.mapToGlobal(position))
+        if action == delete_action:
+            if QMessageBox.question(self, "Confirm", "Delete this feature?") == QMessageBox.StandardButton.Yes:
+                self.request_deletion.emit(self.peak_model.get_name())
 
+
+class MainWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        self.setLayout(layout)
+
+        # Add a few deletable boxes
+        for i in range(3):
+            box = QModelParamGroup(PeakDataModel(VoigtModel(prefix="V")))
+            layout.addWidget(box)
+
+        self.setWindowTitle("Right-click Deletable GroupBox")
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-
-    window = QWidget()
-    window.setWindowTitle("QAdjustableSlider Demo")
-    layout = QHBoxLayout(window)
-
-    vp = lmfit.models.VoigtModel(prefix="Voigt1_")
-    cgp = MoreModels.ConvGaussianSplitLorentz(prefix="ConvGauss1_")
-    bkg = MoreModels.Shirley(prefix="Shirley_")
-
-    peak_group_voigt = QModelParamGroup(PeakDataModel(vp))
-    peak_group_cgp = QModelParamGroup(PeakDataModel(cgp))
-    param_group_bkg = QModelParamGroup(PeakDataModel(bkg))
-    layout.addWidget(peak_group_cgp)
-    layout.addWidget(peak_group_voigt)
-    layout.addWidget(param_group_bkg)
-
-
-    window.show()
-    sys.exit(app.exec())
+    app = QApplication([])
+    w = MainWindow()
+    w.show()
+    app.exec()
