@@ -43,8 +43,12 @@ class BoundedValue:
         """
         if "value" in data.keys():
             if ("min" not in data.keys()) and ("max" not in data.keys()):
-                data["min"] = min(0, data["value"] * 2)
-                data["max"] = max(0, data["value"] * 2)
+                if data["value"] == 0:
+                    data["min"] = -1
+                    data["max"] = 1
+                else:
+                    data["min"] = min(0, data["value"] * 2)
+                    data["max"] = max(0, data["value"] * 2)
             elif "min" not in data.keys():
                 data["min"] = data["max"] - abs(data["value"] * 2)
             elif "max" not in data.keys():

@@ -1,18 +1,9 @@
 import sys
-import os
-from sys import prefix
-
-import numpy as np
-import matplotlib.pyplot as plt
-import lmfit
-import matplotlib as mpl
-import lmfitxps.backgrounds
-import lmfitxps.models
-import MoreModels
-from DataImport import load_specslab_xy_with_error_bars, load_specslab_xy
 
 from PyQt6.QtWidgets import QApplication
+
 from GuiLayout import PeakFitter
+
 #
 # examples_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'examples'))
 # data = load_specslab_xy(os.path.join(examples_path, 'Cathode Constituents Carbon Black C1S22.xy'), apply_transmission=True)

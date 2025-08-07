@@ -1,33 +1,18 @@
 import os.path
-import sys
-import numpy as np
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QMessageBox,
-    QPushButton, QFileDialog, QLabel, QSlider, QGroupBox, QGridLayout, QMenuBar, QMenu
-)
-from PyQt6.QtGui import QAction
-from PyQt6.QtCore import Qt
 
+import lmfit
+import numpy as np
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QMessageBox,
+    QPushButton, QFileDialog
+)
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from numpy.ma.core import minimum
-from scipy.signal import envelope
 
-import DataImport
 import CustomWidgets
+import DataImport
 import MoreModels
-import lmfit
-
-from src.CustomWidgets import QModelParamGroup
-
-
-def calculate_peaks(x, params1, params2, params3):
-    # Dummy peak calculator: replace with your real implementation
-    peaks = np.zeros_like(x)
-    peaks += params1[0] * np.exp(-(x - params1[1]) ** 2 / (2 * params1[2] ** 2))  # Gaussian
-    peaks += params2[0] * np.exp(-(x - params2[1]) ** 2 / (2 * params2[2] ** 2))  # Gaussian
-    peaks += params3[0] * np.exp(-(x - params3[1]) ** 2 / (2 * params3[2] ** 2))  # Gaussian
-    return peaks
 
 
 def optimise_parameters(x, y):
@@ -129,9 +114,11 @@ class PeakFitter(QMainWindow):
             return
 
         if name=="":
+            self.ax.clear()
+            self.ax.plot(self.x, self.y, 'kx', label="Data")
             self.model_lines = {}
             for model in self.models:
-                assert isinstance(model, QModelParamGroup)
+                assert isinstance(model, CustomWidgets.QModelParamGroup)
                 self.plot_peak_model(model.peak_model)
         else:
             model = next((m for m in self.models if m.peak_model.get_name()==name), None)
@@ -154,7 +141,7 @@ class PeakFitter(QMainWindow):
             self.model_lines[peak_name].set_xdata(self.x)
             self.model_lines[peak_name].set_ydata(model_y)
         else:
-            self.model_lines[peak_name] = self.ax.plot(self.x, model_y, label=peak_name.Title())
+            self.model_lines[peak_name] = self.ax.plot(self.x, model_y, label=peak_name.title())
 
     def plot_envelope(self):
         envelope_y = np.zeros_like(self.x)
