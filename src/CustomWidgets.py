@@ -24,6 +24,12 @@ class BoundedValue:
         else:
             self.value = new_value
 
+    def set_lims(self, new_lims):
+        if new_lims[1]>new_lims[0]:
+            self.min_val = new_lims[0]
+            self.max_val = new_lims[1]
+            self.set_value(self.value)
+
     def set_min(self, new_min):
         if new_min < self.max_val:
             self.min_val = new_min
@@ -34,8 +40,11 @@ class BoundedValue:
             self.max_val = new_max
             self.set_value(self.value)
 
+    def to_slider_dict(self):
+        return {'value': self.value, 'min': self.min_val, 'max':self.max_val}
+
     @classmethod
-    def from_dict(cls, data: dict):
+    def from_slider_dict(cls, data: dict):
         """
         Create an instance from a dictionary.
         Expects keys: 'value', 'min', 'max'.
@@ -268,12 +277,12 @@ class QAdjustableSlider(QWidget):
             return self.min_val
 
 class PeakDataModel(QObject):
-    param_changed = pyqtSignal(str, object)  # param_name, new_value
+    param_changed = pyqtSignal(str, object)  # param_name, new_value for the slider
     name_changed = pyqtSignal(str)                  # new_value
 
     def __init__(self, peak_model: lmfit.Model):
         super().__init__()
-        self._peak_model = peak_model
+        self.peak_model = peak_model
         self._params = {}               # {str: BoundedValue}
         self._peak_name = peak_model.prefix
         self._internal_update = False
@@ -288,7 +297,7 @@ class PeakDataModel(QObject):
             if hint=={}:
                 hint["value"] = peak_model.def_vals.get(param_name.removeprefix(peak_model.prefix), 1)
             try:
-                value = BoundedValue.from_dict(hint)
+                value = BoundedValue.from_slider_dict(hint)
                 self._params[param_name] = value
             except ArgumentError:
                 pass
@@ -320,21 +329,22 @@ class PeakDataModel(QObject):
 
         self._internal_update = False
 
-    def make_model_parameters(self):
-        model_params = lmfit.Parameters()
+    def make_model_parameters(self, model_params=None):
+        if model_params is None:
+            model_params = lmfit.Parameters()
         for k,v in self._params.items():
             assert isinstance(v, BoundedValue)
             model_params.add(k, min=v.min_val, max=v.max_val, value=v.value)
         return model_params
 
     def eval_requirements(self) -> list:
-        return self._peak_model.independent_vars
+        return self.peak_model.independent_vars
 
     def evaluate(self, x, **kwargs):
-        if ('y' in self._peak_model.independent_vars) and (kwargs.get('y') is None):
-            raise TypeError("This model requires y as an independent value to be passed via kwargs")
+        return self.peak_model.eval(params=self.make_model_parameters(), x=x, **kwargs)
 
-        return self._peak_model.eval(params=self.make_model_parameters(), x=x, **kwargs)
+    def get_model_and_params_for_fitting(self, model_params=None):
+        return self.peak_model, self.make_model_parameters(model_params)
 
 
 class QModelParamGroup(QGroupBox):
@@ -342,8 +352,8 @@ class QModelParamGroup(QGroupBox):
     request_deletion = pyqtSignal(str)
     def __init__(self, peak_model: PeakDataModel, parent=None):
         super().__init__(parent)
-        self.peak_model = peak_model
-        self.setTitle(self.peak_model.get_name())
+        self.data_model = peak_model
+        self.setTitle(self.data_model.get_name())
         self._internal_update = False
 
         form_layout = QFormLayout()
@@ -357,7 +367,7 @@ class QModelParamGroup(QGroupBox):
             self.sliders[name] = slider
 
             # Label with the parameter name
-            label = QLabel(name.removeprefix(self.peak_model.get_name()).title())
+            label = QLabel(name.removeprefix(self.data_model.get_name()).title())
             label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
 
             # Connect slider value changes to model
@@ -371,11 +381,27 @@ class QModelParamGroup(QGroupBox):
         self.setLayout(form_layout)
 
         # Connect model changes to slider updates
-        self.peak_model.param_changed.connect(self._on_param_changed)
+        self.data_model.param_changed.connect(self._on_param_changed)
 
         # Enable context menu events
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
+
+    def set_param_directly(self, name, value):
+        slider = self.sliders.get(name)
+        if slider is not None:
+            assert isinstance(slider, QAdjustableSlider)
+            if isinstance(value, BoundedValue):
+                slider.max_edit.setText(str(value.max_val))
+                slider.max_edit.editingFinished.emit()
+                slider.min_edit.setText(str(value.min_val))
+                slider.min_edit.editingFinished.emit()
+                slider.value_edit.setText(str(value.value))
+                slider.value_edit.editingFinished.emit()
+            else:
+                slider.value_edit.setText(str(value))
+                slider.value_edit.editingFinished.emit()
+
 
     def _on_param_changed(self, name, value):
         if self._internal_update:
@@ -390,23 +416,21 @@ class QModelParamGroup(QGroupBox):
 
     def _update_model_value(self, name, value):
         if self._internal_update:
-            self.paramChanged.emit(self.peak_model.get_name())    # TODO: test if paramChanged signal needs to be emitted if it's an internal update
             return
         self._internal_update = True
-        curr_bv = self.peak_model.get_param(name)
+        curr_bv = self.data_model.get_param(name)
         curr_bv.set_value(value)
-        self.peak_model.set_param(name, curr_bv)
-        self.paramChanged.emit(self.peak_model.get_name())
+        self.data_model.set_param(name, curr_bv)
+        self.paramChanged.emit(self.data_model.get_name())
         self._internal_update = False
 
     def _update_model_lims(self, name, value):
         if self._internal_update:
             return
         self._internal_update = True
-        curr_bv = self.peak_model.get_param(name)
-        curr_bv.set_min(value[0])
-        curr_bv.set_max(value[1])
-        self.peak_model.set_param(name, curr_bv)
+        curr_bv = self.data_model.get_param(name)
+        curr_bv.set_lims(value)
+        self.data_model.set_param(name, curr_bv)
         self._internal_update = False
 
     def show_context_menu(self, position: QPoint):
@@ -415,7 +439,7 @@ class QModelParamGroup(QGroupBox):
         action = menu.exec(self.mapToGlobal(position))
         if action == delete_action:
             if QMessageBox.question(self, "Confirm", "Delete this feature?") == QMessageBox.StandardButton.Yes:
-                self.request_deletion.emit(self.peak_model.get_name())
+                self.request_deletion.emit(self.data_model.get_name())
 
 
 class MainWindow(QWidget):

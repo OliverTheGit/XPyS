@@ -13,11 +13,7 @@ from matplotlib.figure import Figure
 import CustomWidgets
 import DataImport
 import MoreModels
-
-
-def optimise_parameters(x, y):
-    # Dummy optimizer: replace with your real implementation
-    return [5, 1, 1], [1, 50, 5, 1, 1], [2, 50, 5, 1]
+import lmfitxps.models
 
 
 class PeakFitter(QMainWindow):
@@ -29,8 +25,7 @@ class PeakFitter(QMainWindow):
         self.y = np.array([])
         self.err_bars = np.array([])
 
-        self.components = [lmfit.models.VoigtModel(prefix="Voigt1_"),
-                           MoreModels.ConvGaussianSplitLorentz(prefix="ConvGauss1_")]
+        self.components = {}
 
         self.init_ui()
 
@@ -50,13 +45,13 @@ class PeakFitter(QMainWindow):
         controls = QHBoxLayout()
 
         # Sliders
-        vp = lmfit.models.VoigtModel(prefix="Voigt1_")
-        cgp = MoreModels.ConvGaussianSplitLorentz(prefix="ConvGauss1_")
-        bkg = MoreModels.Shirley(prefix="Shirley_")
+        vp = CustomWidgets.PeakDataModel(lmfit.models.VoigtModel(prefix="Voigt1_"))
+        cgp = CustomWidgets.PeakDataModel(MoreModels.ConvGaussianSplitLorentz(prefix="ConvGauss1_"))
+        bkg = CustomWidgets.PeakDataModel(lmfit.Model(MoreModels.calculate_shirley,prefix="Shirley_", independent_vars=['x','y']))
 
-        peak_group_voigt = CustomWidgets.QModelParamGroup(CustomWidgets.PeakDataModel(vp))
-        peak_group_cgp = CustomWidgets.QModelParamGroup(CustomWidgets.PeakDataModel(cgp))
-        param_group_bkg = CustomWidgets.QModelParamGroup(CustomWidgets.PeakDataModel(bkg))
+        peak_group_voigt = CustomWidgets.QModelParamGroup(vp)
+        peak_group_cgp = CustomWidgets.QModelParamGroup(cgp)
+        param_group_bkg = CustomWidgets.QModelParamGroup(bkg)
 
         peak_group_voigt.paramChanged.connect(self.update_plot)
         peak_group_cgp.paramChanged.connect(self.update_plot)
@@ -66,8 +61,8 @@ class PeakFitter(QMainWindow):
         peak_group_cgp.request_deletion.connect(self.delete_model)
         param_group_bkg.request_deletion.connect(self.delete_model)
 
-        self.models = {"Voigt1_": peak_group_voigt, "ConvGauss1_": peak_group_cgp, "Shirley_": param_group_bkg}
-        for m in self.models.values():
+        self.components = {"Voigt1_": peak_group_voigt, "ConvGauss1_": peak_group_cgp, "Shirley_": param_group_bkg}
+        for m in self.components.values():
             controls.addWidget(m)
 
         # Button
@@ -84,14 +79,31 @@ class PeakFitter(QMainWindow):
         open_action.triggered.connect(self.open_file)
         file_menu.addAction(open_action)
 
+
+        # manually do some parameters
+        self.components["Voigt1_"].set_param_directly("Voigt1_amplitude", CustomWidgets.BoundedValue(314, 0, 4000))
+        self.components["Voigt1_"].set_param_directly("Voigt1_sigma", CustomWidgets.BoundedValue(0.5, 0.01, 3))
+        self.components["Voigt1_"].set_param_directly("Voigt1_center", CustomWidgets.BoundedValue(1196, 1190, 1210))
+
+        self.components["ConvGauss1_"].set_param_directly("ConvGauss1_amplitude", CustomWidgets.BoundedValue(4000, 0, 5000))
+        self.components["ConvGauss1_"].set_param_directly("ConvGauss1_sigma", CustomWidgets.BoundedValue(0.3, 0.00, 5))
+        self.components["ConvGauss1_"].set_param_directly("ConvGauss1_sigma_r", CustomWidgets.BoundedValue(0.17, 0.00, 5))
+        self.components["ConvGauss1_"].set_param_directly("ConvGauss1_gaussian_sigma", CustomWidgets.BoundedValue(0.35, 0.01, 10))
+        self.components["ConvGauss1_"].set_param_directly("ConvGauss1_center", CustomWidgets.BoundedValue(1202.3, 1190, 1210))
+
+        self.components["Shirley_"].set_param_directly("Shirley_offset_low", CustomWidgets.BoundedValue(0, -100, 0))
+        self.components["Shirley_"].set_param_directly("Shirley_offset_high", CustomWidgets.BoundedValue(0, -100, 0))
+        self.components["Shirley_"].set_param_directly("Shirley_avg_width", CustomWidgets.BoundedValue(5, 4.9, 5.1))
+
+
     def slider_changed(self, group, idx, value, callback):
         getattr(self, group.lower())[idx] = value
         callback()
 
     def delete_model(self, name):
-        if name not in self.models.keys():
+        if name not in self.components.keys():
             raise ValueError(f"{name} not in self.models")
-        model_to_delete = self.models.pop(name)
+        model_to_delete = self.components.pop(name)
         model_to_delete.hide()
         model_to_delete.deleteLater()
         self.update_plot()
@@ -131,14 +143,14 @@ class PeakFitter(QMainWindow):
             self.ax.clear()
             self.ax.plot(self.x, self.y, 'kx', label="Data")
             self.model_lines = {}
-            for model in self.models.values():
+            for model in self.components.values():
                 assert isinstance(model, CustomWidgets.QModelParamGroup)
-                self.plot_peak_model(model.peak_model)
+                self.plot_peak_model(model.data_model)
         else:
-            model = self.models.get(name)
+            model = self.components.get(name)
             if model is None:
                 raise ValueError(f"{name} not a recognised peak model")
-            self.plot_peak_model(model.peak_model)
+            self.plot_peak_model(model.data_model)
 
         self.plot_envelope()
 
@@ -147,9 +159,7 @@ class PeakFitter(QMainWindow):
 
     def plot_peak_model(self, peak_model):
         peak_name = peak_model.get_name()
-        needs_y = 'y' in peak_model.eval_requirements()
-        temp_kwargs = {'y': self.y} if needs_y else {}
-        model_y = peak_model.evaluate(self.x, **temp_kwargs)  # TODO: options for finer x to look prettier?
+        model_y = peak_model.evaluate(self.x, y=self.y)  # TODO: options for finer x to look prettier?
         if peak_name in self.model_lines.keys():
             self.model_lines[peak_name].set_xdata(self.x)
             self.model_lines[peak_name].set_ydata(model_y)
@@ -158,10 +168,10 @@ class PeakFitter(QMainWindow):
 
     def plot_envelope(self):
         envelope_y = np.zeros_like(self.x)
-        for model in self.models.values():
-            needs_y = 'y' in model.peak_model.eval_requirements()
+        for model in self.components.values():
+            needs_y = 'y' in model.data_model.eval_requirements()
             temp_kwargs = {'y': self.y} if needs_y else {}
-            envelope_y += model.peak_model.evaluate(self.x, **temp_kwargs)
+            envelope_y += model.data_model.evaluate(self.x, **temp_kwargs)
         if "Envelope" in self.model_lines:
             self.model_lines["Envelope"].set_xdata(self.x)
             self.model_lines["Envelope"].set_ydata(envelope_y)
@@ -171,4 +181,14 @@ class PeakFitter(QMainWindow):
     def optimise(self):
         if self.x.size == 0:
             return
-        return
+
+        models = [m.data_model for m in self.components.values()]
+        result = MoreModels.optimise_multiple_models(self.x, self.y, models)
+        assert isinstance(result, lmfit.model.ModelResult)
+        summary = result.summary()
+        a=1
+        for pref, comp in self.components.items():
+            for k,v in summary["best_values"].items():
+                if k.startswith(pref):
+                    comp.set_param_directly(k, v)
+

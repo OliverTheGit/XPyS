@@ -4,6 +4,25 @@ from PyQt6.QtWidgets import QApplication
 
 from GuiLayout import PeakFitter
 
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = PeakFitter()
+    window.show()
+    sys.exit(app.exec())
+
+
+
+# import os
+#
+# import lmfit
+# import lmfitxps.backgrounds
+# import numpy as np
+# from matplotlib import pyplot as plt
+# import matplotlib as mpl
+#
+# from src import MoreModels
+# from src.DataImport import load_specslab_xy
 #
 # examples_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'examples'))
 # data = load_specslab_xy(os.path.join(examples_path, 'Cathode Constituents Carbon Black C1S22.xy'), apply_transmission=True)
@@ -63,9 +82,3 @@ from GuiLayout import PeakFitter
 #
 # fig.show()
 # plt.show(block=True)
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = PeakFitter()
-    window.show()
-    sys.exit(app.exec())

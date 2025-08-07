@@ -6,6 +6,28 @@ from lmfit import Model
 import lmfit
 from lmfit.models import guess_from_peak
 
+from CustomWidgets import PeakDataModel
+
+
+def optimise_multiple_models(x, data, models):
+    assert isinstance(models, list)
+
+    if not (any(x) and any(data)):
+        raise ValueError("One of the arrays x or y is empty. Returning zero background.")
+    if not len(x) == len(data):
+        raise ValueError("Length missmatch between x and y. Returning zero background")
+    if not any(models):
+        raise  ValueError("Need a list containing at least one model")
+
+    fitting_model, parameters = models[0].get_model_and_params_for_fitting()
+    for i in range(1, len(models)):
+        temp_data_model = models[i]
+
+        temp_model, parameters = temp_data_model.get_model_and_params_for_fitting(parameters)
+        fitting_model += temp_model
+
+    return fitting_model.fit(data, parameters, x=x, y=data, weights=1 / (np.sqrt(data)))
+
 
 def split_lorentz_conv_gauss(x,
                              amplitude: float,
@@ -143,7 +165,7 @@ class Shirley(lmfit.model.Model):
     def __init__(self, *args, **kwargs):
         super().__init__(calculate_shirley, *args, **kwargs)
         self._set_paramhints_prefix()
-        self.independent_vars.append('y')
+        self.independent_vars.extend(['y', self.prefix+'y'])
 
     def _set_paramhints_prefix(self):
         self.set_param_hint('offset_low', value=0)
