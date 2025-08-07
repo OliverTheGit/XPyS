@@ -97,10 +97,10 @@ class ConvGaussianSplitLorentz(lmfit.model.Model):
         return lmfit.models.update_param_vals(params, self.prefix, **kwargs)
 
 
-def calculate_shirley(x, y, avg_width: int = 1, offset_low = 0.0, offset_high = 0.0) -> np.ndarray:
+def calculate_shirley(x, y, avg_width = 1, offset_low = 0.0, offset_high = 0.0) -> np.ndarray:
     if avg_width >= len(y):
         avg_width = len(y) // 3  # fallback if too large (//=floordiv)
-
+    avg_width = max(1, int(avg_width))
     # Get average of low/high end intensities
     left_avg = np.mean(y[:avg_width])
     right_avg = np.mean(y[-avg_width:])

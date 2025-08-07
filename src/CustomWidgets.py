@@ -339,7 +339,7 @@ class PeakDataModel(QObject):
 
 
 class QModelParamGroup(QGroupBox):
-    paramChanged = pyqtSignal()
+    paramChanged = pyqtSignal(str)
     def __init__(self, peak_model: PeakDataModel, parent=None):
         super().__init__(parent)
         self.peak_model = peak_model
@@ -386,13 +386,13 @@ class QModelParamGroup(QGroupBox):
 
     def _update_model_value(self, name, value):
         if self._internal_update:
-            self.paramChanged.emit()    # TODO: test if paramChanged signal needs to be emitted if it's an internal update
+            self.paramChanged.emit(self.peak_model.get_name())    # TODO: test if paramChanged signal needs to be emitted if it's an internal update
             return
         self._internal_update = True
         curr_bv = self.peak_model.get_param(name)
         curr_bv.set_value(value)
         self.peak_model.set_param(name, curr_bv)
-        self.paramChanged.emit()
+        self.paramChanged.emit(self.peak_model.get_name())
         self._internal_update = False
 
     def _update_model_lims(self, name, value):

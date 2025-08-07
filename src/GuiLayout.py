@@ -29,7 +29,8 @@ class PeakFitter(QMainWindow):
         self.y = np.array([])
         self.err_bars = np.array([])
 
-        self.components = [lmfit.models.VoigtModel(prefix="Voigt1_"), MoreModels.ConvGaussianSplitLorentz(prefix="ConvGauss1_")]
+        self.components = [lmfit.models.VoigtModel(prefix="Voigt1_"),
+                           MoreModels.ConvGaussianSplitLorentz(prefix="ConvGauss1_")]
 
         self.init_ui()
 
@@ -61,8 +62,8 @@ class PeakFitter(QMainWindow):
         peak_group_cgp.paramChanged.connect(self.update_plot)
         param_group_bkg.paramChanged.connect(self.update_plot)
 
-        self.models = [peak_group_voigt, peak_group_cgp, param_group_bkg]
-        for m in self.models:
+        self.models = {"Voigt1_": peak_group_voigt, "ConvGauss1_": peak_group_cgp, "Shirley_": param_group_bkg}
+        for m in self.models.values():
             controls.addWidget(m)
 
         # Button
@@ -79,31 +80,32 @@ class PeakFitter(QMainWindow):
         open_action.triggered.connect(self.open_file)
         file_menu.addAction(open_action)
 
-
     def slider_changed(self, group, idx, value, callback):
         getattr(self, group.lower())[idx] = value
         callback()
 
     def open_file(self):
-        filepath, _ = QFileDialog.getOpenFileName(self, "Open Data File", "",
-                                                  "Data Files (*.txt *.csv *.dat *.xy);;All Files (*)")
+        # commented out to quickly load test data during development
+        # filepath, _ = QFileDialog.getOpenFileName(self, "Open Data File", "",
+        #                                           "Data Files (*.txt *.csv *.dat *.xy);;All Files (*)")
+        filepath = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'examples', 'Cathode Constituents Carbon Black C1S22.xy'))
         if filepath:
             _, ext = os.path.splitext(filepath)
-            incl_errs = False
-            if ext == ".xy":
-                result = QMessageBox.question(None, "", "Do you want to include error bars?",
-                                              QMessageBox.StandardButton.Yes |
-                                              QMessageBox.StandardButton.No |
-                                              QMessageBox.StandardButton.Cancel)
-                if result == QMessageBox.StandardButton.Yes:
-                    incl_errs = True
-                elif result == QMessageBox.StandardButton.Cancel:
-                    return
-            if incl_errs:
-                data, self.err_bars = DataImport.load_specslab_xy_with_error_bars(filepath)
-            else:
-                data = DataImport.load_specslab_xy(filepath)
-                self.err_bars = None
+            # incl_errs = False
+            # if ext == ".xy":
+            #     result = QMessageBox.question(None, "", "Do you want to include error bars?",
+            #                                   QMessageBox.StandardButton.Yes |
+            #                                   QMessageBox.StandardButton.No |
+            #                                   QMessageBox.StandardButton.Cancel)
+            #     if result == QMessageBox.StandardButton.Yes:
+            #         incl_errs = True
+            #     elif result == QMessageBox.StandardButton.Cancel:
+            #         return
+            # if incl_errs:
+            #     data, self.err_bars = DataImport.load_specslab_xy_with_error_bars(filepath)
+            # else:
+            data = DataImport.load_specslab_xy(filepath)
+            self.err_bars = None
 
             self.x = data[:, 0]
             self.y = data[:, 1]
@@ -113,19 +115,18 @@ class PeakFitter(QMainWindow):
         if self.x.size == 0:
             return
 
-        if name=="":
+        if name == "":
             self.ax.clear()
             self.ax.plot(self.x, self.y, 'kx', label="Data")
             self.model_lines = {}
-            for model in self.models:
+            for model in self.models.values():
                 assert isinstance(model, CustomWidgets.QModelParamGroup)
                 self.plot_peak_model(model.peak_model)
         else:
-            model = next((m for m in self.models if m.peak_model.get_name()==name), None)
+            model = self.models.get(name)
             if model is None:
                 raise ValueError(f"{name} not a recognised peak model")
             self.plot_peak_model(model.peak_model)
-
 
         self.plot_envelope()
 
@@ -137,25 +138,23 @@ class PeakFitter(QMainWindow):
         needs_y = 'y' in peak_model.eval_requirements()
         temp_kwargs = {'y': self.y} if needs_y else {}
         model_y = peak_model.evaluate(self.x, **temp_kwargs)  # TODO: options for finer x to look prettier?
-        if peak_name in self.model_lines:
+        if peak_name in self.model_lines.keys():
             self.model_lines[peak_name].set_xdata(self.x)
             self.model_lines[peak_name].set_ydata(model_y)
         else:
-            self.model_lines[peak_name] = self.ax.plot(self.x, model_y, label=peak_name.title())
+            self.model_lines[peak_name] = self.ax.plot(self.x, model_y, label=peak_name.title())[0]
 
     def plot_envelope(self):
         envelope_y = np.zeros_like(self.x)
-        for model in self.models:
+        for model in self.models.values():
             needs_y = 'y' in model.peak_model.eval_requirements()
             temp_kwargs = {'y': self.y} if needs_y else {}
-            envelope_y  += model.peak_model.evaluate(self.x, **temp_kwargs)
+            envelope_y += model.peak_model.evaluate(self.x, **temp_kwargs)
         if "Envelope" in self.model_lines:
             self.model_lines["Envelope"].set_xdata(self.x)
             self.model_lines["Envelope"].set_ydata(envelope_y)
         else:
-            self.model_lines["Envelope"] = self.ax.plot(self.x, envelope_y, label="Envelope")
-
-
+            self.model_lines["Envelope"] = self.ax.plot(self.x, envelope_y, label="Envelope")[0]
 
     def optimise(self):
         if self.x.size == 0:
