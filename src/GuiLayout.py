@@ -11,11 +11,14 @@ from PyQt6.QtCore import Qt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from numpy.ma.core import minimum
+from scipy.signal import envelope
 
 import DataImport
 import CustomWidgets
 import MoreModels
 import lmfit
+
+from src.CustomWidgets import QModelParamGroup
 
 
 def calculate_peaks(x, params1, params2, params3):
@@ -54,15 +57,28 @@ class PeakFitter(QMainWindow):
         # === Matplotlib Canvas ===
         self.canvas = FigureCanvas(Figure(figsize=(6, 4)))
         self.ax = self.canvas.figure.add_subplot(111)
+        self.model_lines = {}
         layout.addWidget(self.canvas)
 
         # === Controls ===
         controls = QHBoxLayout()
 
         # Sliders
-        controls.addWidget(self.create_slider_group("Params1", self.params1, self.update_plot))
-        controls.addWidget(self.create_slider_group("Params2", self.params2, self.update_plot))
-        controls.addWidget(self.create_slider_group("Params3", self.params3, self.update_plot))
+        vp = lmfit.models.VoigtModel(prefix="Voigt1_")
+        cgp = MoreModels.ConvGaussianSplitLorentz(prefix="ConvGauss1_")
+        bkg = MoreModels.Shirley(prefix="Shirley_")
+
+        peak_group_voigt = CustomWidgets.QModelParamGroup(CustomWidgets.PeakDataModel(vp))
+        peak_group_cgp = CustomWidgets.QModelParamGroup(CustomWidgets.PeakDataModel(cgp))
+        param_group_bkg = CustomWidgets.QModelParamGroup(CustomWidgets.PeakDataModel(bkg))
+
+        peak_group_voigt.paramChanged.connect(self.update_plot)
+        peak_group_cgp.paramChanged.connect(self.update_plot)
+        param_group_bkg.paramChanged.connect(self.update_plot)
+
+        self.models = [peak_group_voigt, peak_group_cgp, param_group_bkg]
+        for m in self.models:
+            controls.addWidget(m)
 
         # Button
         self.optimise_btn = QPushButton("Optimise Parameters")
@@ -78,23 +94,6 @@ class PeakFitter(QMainWindow):
         open_action.triggered.connect(self.open_file)
         file_menu.addAction(open_action)
 
-    def create_slider_group(self, name, param_list, callback):
-        group_box = QGroupBox(name)
-        layout = QGridLayout()
-        self.sliders = getattr(self, 'sliders', {})
-        self.sliders[name] = []
-
-        temp_param_names = ["Amplitude", "Centre", "Width", "NA", "NA"]
-
-        for i, val in enumerate(param_list):
-            slider = CustomWidgets.QAdjustableSlider(min_val=0.0, max_val=100.0, step=0.1, initial=val, decimals=2)
-            slider.valueChanged.connect(lambda v, idx=i, n=name: self.slider_changed(n, idx, v, callback))
-            layout.addWidget(QLabel(f"{temp_param_names[i]}:"), i, 0)
-            layout.addWidget(slider, i, 1)
-            self.sliders[name].append(slider)
-
-        group_box.setLayout(layout)
-        return group_box
 
     def slider_changed(self, group, idx, value, callback):
         getattr(self, group.lower())[idx] = value
@@ -125,29 +124,53 @@ class PeakFitter(QMainWindow):
             self.y = data[:, 1]
             self.update_plot()
 
-    def update_plot(self):
+    def update_plot(self, name=""):
         if self.x.size == 0:
             return
-        self.ax.clear()
-        self.ax.plot(self.x, self.y, label="Data")
 
-        peak = calculate_peaks(self.x, self.params1, self.params2, self.params3)
-        self.ax.plot(self.x, peak, label="Fit", color='red')
+        if name=="":
+            self.model_lines = {}
+            for model in self.models:
+                assert isinstance(model, QModelParamGroup)
+                self.plot_peak_model(model.peak_model)
+        else:
+            model = next((m for m in self.models if m.peak_model.get_name()==name), None)
+            if model is None:
+                raise ValueError(f"{name} not a recognised peak model")
+            self.plot_peak_model(model.peak_model)
+
+
+        self.plot_envelope()
 
         self.ax.legend()
-        self.canvas.draw()
+        self.canvas.draw_idle()
+
+    def plot_peak_model(self, peak_model):
+        peak_name = peak_model.get_name()
+        needs_y = 'y' in peak_model.eval_requirements()
+        temp_kwargs = {'y': self.y} if needs_y else {}
+        model_y = peak_model.evaluate(self.x, **temp_kwargs)  # TODO: options for finer x to look prettier?
+        if peak_name in self.model_lines:
+            self.model_lines[peak_name].set_xdata(self.x)
+            self.model_lines[peak_name].set_ydata(model_y)
+        else:
+            self.model_lines[peak_name] = self.ax.plot(self.x, model_y, label=peak_name.Title())
+
+    def plot_envelope(self):
+        envelope_y = np.zeros_like(self.x)
+        for model in self.models:
+            needs_y = 'y' in model.peak_model.eval_requirements()
+            temp_kwargs = {'y': self.y} if needs_y else {}
+            envelope_y  += model.peak_model.evaluate(self.x, **temp_kwargs)
+        if "Envelope" in self.model_lines:
+            self.model_lines["Envelope"].set_xdata(self.x)
+            self.model_lines["Envelope"].set_ydata(envelope_y)
+        else:
+            self.model_lines["Envelope"] = self.ax.plot(self.x, envelope_y, label="Envelope")
+
+
 
     def optimise(self):
         if self.x.size == 0:
             return
-        self.params1, self.params2, self.params3 = optimise_parameters(self.x, self.y)
-
-        # Update sliders
-        for i, val in enumerate(self.params1):
-            self.sliders['Params1'][i].setValue(int(val * 10))
-        for i, val in enumerate(self.params2):
-            self.sliders['Params2'][i].setValue(int(val * 10))
-        for i, val in enumerate(self.params3):
-            self.sliders['Params3'][i].setValue(int(val * 10))
-
-        self.update_plot()
+        return

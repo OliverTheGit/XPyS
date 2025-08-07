@@ -105,9 +105,9 @@ class QAdjustableSlider(QWidget):
         self.decimals = decimals
         self._internal_update = False
 
-        layout = QGridLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setVerticalSpacing(0)  # reduce space between rows
+        grid_layout = QGridLayout(self)
+        grid_layout.setContentsMargins(0, 0, 0, 0)
+        grid_layout.setVerticalSpacing(0)  # reduce space between rows
 
         # Slider in top-left cell
         self.slider = QSlider(Qt.Orientation.Horizontal)
@@ -115,13 +115,13 @@ class QAdjustableSlider(QWidget):
         self.slider.setMaximum(int((max_val - min_val) / self.step))
         self.slider.setValue(int((initial - min_val) / self.step))
         self.slider.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        layout.addWidget(self.slider, 0, 0)
+        grid_layout.addWidget(self.slider, 0, 0)
 
         # Current value edit in top-right cell
         self.value_edit = QSliderLineEdit(f"{initial:.{decimals}f}")
         self.value_edit.set_to_font_width()
         self.value_edit.setAlignment(Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(self.value_edit, 0, 1)
+        grid_layout.addWidget(self.value_edit, 0, 1)
 
         # Bottom row: container widget with min/max edits and spacer
         limits_widget = QWidget()
@@ -139,10 +139,10 @@ class QAdjustableSlider(QWidget):
         self.max_edit.setFixedHeight(13)
         limits_layout.addWidget(self.max_edit, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
-        layout.addWidget(limits_widget, 1, 0)
+        grid_layout.addWidget(limits_widget, 1, 0)
 
         # Empty placeholder on bottom-right cell for alignment
-        layout.addWidget(QWidget(), 1, 1)
+        grid_layout.addWidget(QWidget(), 1, 1)
 
         # Connections
         self.slider.valueChanged.connect(self.on_slider_changed)
@@ -324,6 +324,9 @@ class PeakDataModel(QObject):
             model_params.add(k, min=v.min_val, max=v.max_val, value=v.value)
         return model_params
 
+    def eval_requirements(self) -> list:
+        return self._peak_model.independent_vars
+
     def evaluate(self, x, **kwargs):
         if ('y' in self._peak_model.independent_vars) and (kwargs.get('y') is None):
             raise TypeError("This model requires y as an independent value to be passed via kwargs")
@@ -332,6 +335,7 @@ class PeakDataModel(QObject):
 
 
 class QModelParamGroup(QGroupBox):
+    paramChanged = pyqtSignal()
     def __init__(self, peak_model: PeakDataModel, parent=None):
         super().__init__(parent)
         self.peak_model = peak_model
@@ -378,11 +382,13 @@ class QModelParamGroup(QGroupBox):
 
     def _update_model_value(self, name, value):
         if self._internal_update:
+            self.paramChanged.emit()    # TODO: test if paramChanged signal needs to be emitted if it's an internal update
             return
         self._internal_update = True
         curr_bv = self.peak_model.get_param(name)
         curr_bv.set_value(value)
         self.peak_model.set_param(name, curr_bv)
+        self.paramChanged.emit()
         self._internal_update = False
 
     def _update_model_lims(self, name, value):
