@@ -1,5 +1,6 @@
 from argparse import ArgumentError
 from dataclasses import dataclass
+import platform
 
 import lmfit.models
 from PyQt6.QtCore import Qt, pyqtSignal, QObject, QPoint
@@ -9,6 +10,13 @@ from PyQt6.QtWidgets import (
 )
 from lmfit.models import VoigtModel
 
+
+def platform_ctrl_or_cmd(key: str) -> str:
+    """Returns a shortcut string using Cmd on macOS and Ctrl on other platforms.
+    Darwin is the name for MacOS apparently
+    Meta represents cmd on MacOS and windows key (or maybe alt?) on Windows"""
+    modifier = "Meta" if platform.system() == "Darwin" else "Ctrl"
+    return f"{modifier}+{key}"
 
 @dataclass
 class BoundedValue:

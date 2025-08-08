@@ -2,7 +2,7 @@ import os.path
 
 import lmfit
 import numpy as np
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QMessageBox,
     QPushButton, QFileDialog
@@ -44,31 +44,31 @@ class PeakFitter(QMainWindow):
         # === Controls ===
         controls = QHBoxLayout()
 
-        # Sliders
-        vp = CustomWidgets.PeakDataModel(lmfit.models.VoigtModel(prefix="Voigt1_"))
-        cgp = CustomWidgets.PeakDataModel(MoreModels.ConvGaussianSplitLorentz(prefix="ConvGauss1_"))
-        bkg = CustomWidgets.PeakDataModel(lmfit.Model(MoreModels.calculate_shirley,prefix="Shirley_", independent_vars=['x','y']))
+        # # Sliders
+        # vp = CustomWidgets.PeakDataModel(lmfit.models.VoigtModel(prefix="Voigt1_"))
+        # cgp = CustomWidgets.PeakDataModel(MoreModels.ConvGaussianSplitLorentz(prefix="ConvGauss1_"))
+        # bkg = CustomWidgets.PeakDataModel(lmfit.Model(MoreModels.calculate_shirley,prefix="Shirley_", independent_vars=['x','y']))
+        #
+        # peak_group_voigt = CustomWidgets.QModelParamGroup(vp)
+        # peak_group_cgp = CustomWidgets.QModelParamGroup(cgp)
+        # param_group_bkg = CustomWidgets.QModelParamGroup(bkg)
+        #
+        # peak_group_voigt.paramChanged.connect(self.update_plot)
+        # peak_group_cgp.paramChanged.connect(self.update_plot)
+        # param_group_bkg.paramChanged.connect(self.update_plot)
+        #
+        # peak_group_voigt.request_deletion.connect(self.delete_model)
+        # peak_group_cgp.request_deletion.connect(self.delete_model)
+        # param_group_bkg.request_deletion.connect(self.delete_model)
+        #
+        # self.components = {"Voigt1_": peak_group_voigt, "ConvGauss1_": peak_group_cgp, "Shirley_": param_group_bkg}
+        # for m in self.components.values():
+        #     controls.addWidget(m)
 
-        peak_group_voigt = CustomWidgets.QModelParamGroup(vp)
-        peak_group_cgp = CustomWidgets.QModelParamGroup(cgp)
-        param_group_bkg = CustomWidgets.QModelParamGroup(bkg)
-
-        peak_group_voigt.paramChanged.connect(self.update_plot)
-        peak_group_cgp.paramChanged.connect(self.update_plot)
-        param_group_bkg.paramChanged.connect(self.update_plot)
-
-        peak_group_voigt.request_deletion.connect(self.delete_model)
-        peak_group_cgp.request_deletion.connect(self.delete_model)
-        param_group_bkg.request_deletion.connect(self.delete_model)
-
-        self.components = {"Voigt1_": peak_group_voigt, "ConvGauss1_": peak_group_cgp, "Shirley_": param_group_bkg}
-        for m in self.components.values():
-            controls.addWidget(m)
-
-        # Button
-        self.optimise_btn = QPushButton("Optimise Parameters")
-        self.optimise_btn.clicked.connect(self.optimise)
-        controls.addWidget(self.optimise_btn)
+        # # Button
+        # self.optimise_btn = QPushButton("Optimise Parameters")
+        # self.optimise_btn.clicked.connect(self.optimise)
+        # controls.addWidget(self.optimise_btn)
 
         layout.addLayout(controls)
 
@@ -76,25 +76,20 @@ class PeakFitter(QMainWindow):
         menubar = self.menuBar()
         file_menu = menubar.addMenu("File")
         open_action = QAction("Open...", self)
+        open_action.setShortcut(QKeySequence.StandardKey.Open)
         open_action.triggered.connect(self.open_file)
         file_menu.addAction(open_action)
 
+        spectrum_menu = menubar.addMenu("Spectrum")
+        add_peak_action = QAction("Add peak")
+        add_peak_action.setShortcut(CustomWidgets.platform_ctrl_or_cmd("A"))
+        add_peak_action.triggered.connect(self.open_file)
+        spectrum_menu.addAction(add_peak_action)
 
-        # manually do some parameters
-        self.components["Voigt1_"].set_param_directly("Voigt1_amplitude", CustomWidgets.BoundedValue(314, 0, 4000))
-        self.components["Voigt1_"].set_param_directly("Voigt1_sigma", CustomWidgets.BoundedValue(0.5, 0.01, 3))
-        self.components["Voigt1_"].set_param_directly("Voigt1_center", CustomWidgets.BoundedValue(1196, 1190, 1210))
-
-        self.components["ConvGauss1_"].set_param_directly("ConvGauss1_amplitude", CustomWidgets.BoundedValue(4000, 0, 5000))
-        self.components["ConvGauss1_"].set_param_directly("ConvGauss1_sigma", CustomWidgets.BoundedValue(0.3, 0.00, 5))
-        self.components["ConvGauss1_"].set_param_directly("ConvGauss1_sigma_r", CustomWidgets.BoundedValue(0.17, 0.00, 5))
-        self.components["ConvGauss1_"].set_param_directly("ConvGauss1_gaussian_sigma", CustomWidgets.BoundedValue(0.35, 0.01, 10))
-        self.components["ConvGauss1_"].set_param_directly("ConvGauss1_center", CustomWidgets.BoundedValue(1202.3, 1190, 1210))
-
-        self.components["Shirley_"].set_param_directly("Shirley_offset_low", CustomWidgets.BoundedValue(0, -100, 0))
-        self.components["Shirley_"].set_param_directly("Shirley_offset_high", CustomWidgets.BoundedValue(0, -100, 0))
-        self.components["Shirley_"].set_param_directly("Shirley_avg_width", CustomWidgets.BoundedValue(5, 4.9, 5.1))
-
+        optimise_action = QAction("Optimise Parameters")
+        optimise_action.setShortcut(CustomWidgets.platform_ctrl_or_cmd("Shift+O"))
+        optimise_action.triggered.connect(self.optimise)
+        spectrum_menu.addAction(optimise_action)
 
     def slider_changed(self, group, idx, value, callback):
         getattr(self, group.lower())[idx] = value
