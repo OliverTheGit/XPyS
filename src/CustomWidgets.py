@@ -6,17 +6,10 @@ import lmfit.models
 from PyQt6.QtCore import Qt, pyqtSignal, QObject, QPoint
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QMessageBox, QLineEdit, QSlider, QHBoxLayout, QSizePolicy, QGridLayout,
-    QGroupBox, QFormLayout, QMenu
+    QGroupBox, QFormLayout, QMenu, QSpacerItem
 )
 from lmfit.models import VoigtModel
 
-
-def platform_ctrl_or_cmd(key: str) -> str:
-    """Returns a shortcut string using Cmd on macOS and Ctrl on other platforms.
-    Darwin is the name for MacOS apparently
-    Meta represents cmd on MacOS and windows key (or maybe alt?) on Windows"""
-    modifier = "Meta" if platform.system() == "Darwin" else "Ctrl"
-    return f"{modifier}+{key}"
 
 @dataclass
 class BoundedValue:
@@ -33,7 +26,7 @@ class BoundedValue:
             self.value = new_value
 
     def set_lims(self, new_lims):
-        if new_lims[1]>new_lims[0]:
+        if new_lims[1] > new_lims[0]:
             self.min_val = new_lims[0]
             self.max_val = new_lims[1]
             self.set_value(self.value)
@@ -49,7 +42,7 @@ class BoundedValue:
             self.set_value(self.value)
 
     def to_slider_dict(self):
-        return {'value': self.value, 'min': self.min_val, 'max':self.max_val}
+        return {'value': self.value, 'min': self.min_val, 'max': self.max_val}
 
     @classmethod
     def from_slider_dict(cls, data: dict):
@@ -102,8 +95,18 @@ class QSliderLineEdit(QLineEdit):
                            "QLineEdit:focus {background: white; border: 1px solid gray; border-radius: 3px;}")
         self.setStyleSheet(line_edit_style)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+        #if platform.system() != "Darwin":
+            # seems to be automatic behaviour on Mac is better
         self.textChanged.connect(self.set_to_font_width)
         self.editingFinished.connect(self.set_to_font_width)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            if self.hasFocus():
+                self.clearFocus()
+                self.set_to_font_width()
+        super().keyPressEvent(event)
 
     def set_to_font_width(self, text=None, padding=12):
         fm = self.fontMetrics()
@@ -116,7 +119,8 @@ class QSliderLineEdit(QLineEdit):
 class QAdjustableSlider(QWidget):
     valueChanged = pyqtSignal(float)
     limit_changed = pyqtSignal(float, float)  # min value, max value
-    def __init__(self, min_val=0.0, max_val=100.0, step = 0.01, initial=0.0, decimals=2, parent=None):
+
+    def __init__(self, min_val=0.0, max_val=100.0, step=0.01, initial=0.0, decimals=2, parent=None):
         super().__init__(parent)
 
         self.min_val = min_val
@@ -144,22 +148,22 @@ class QAdjustableSlider(QWidget):
         grid_layout.addWidget(self.value_edit, 0, 1)
 
         # Bottom row: container widget with min/max edits and spacer
-        limits_widget = QWidget()
-        limits_layout = QHBoxLayout(limits_widget)
+        limits_layout = QHBoxLayout()
         limits_layout.setContentsMargins(0, 0, 0, 0)
 
         self.min_edit = QSliderLineEdit(f"{min_val:.{decimals}f}")
         self.min_edit.setFixedHeight(13)
         limits_layout.addWidget(self.min_edit, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
-        limits_layout.addStretch()
+        spacerItem = QSpacerItem(40, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        limits_layout.addItem(spacerItem)
 
         self.max_edit = QSliderLineEdit(f"{max_val:.{decimals}f}")
         self.max_edit.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.max_edit.setFixedHeight(13)
         limits_layout.addWidget(self.max_edit, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
-        grid_layout.addWidget(limits_widget, 1, 0)
+        grid_layout.addLayout(limits_layout, 1, 0)
 
         # Empty placeholder on bottom-right cell for alignment
         grid_layout.addWidget(QWidget(), 1, 1)
@@ -277,21 +281,21 @@ class QAdjustableSlider(QWidget):
         self.min_edit.setText(str(bounded_value.min_val))
         self.max_edit.setText(str(bounded_value.max_val))
 
-
     def value(self):
         try:
             return float(self.value_edit.text())
         except ValueError:
             return self.min_val
 
+
 class PeakDataModel(QObject):
     param_changed = pyqtSignal(str, object)  # param_name, new_value for the slider
-    name_changed = pyqtSignal(str)                  # new_value
+    name_changed = pyqtSignal(str)  # new_value
 
     def __init__(self, peak_model: lmfit.Model):
         super().__init__()
         self.peak_model = peak_model
-        self._params = {}               # {str: BoundedValue}
+        self._params = {}  # {str: BoundedValue}
         self._peak_name = peak_model.prefix
         self._internal_update = False
 
@@ -302,7 +306,7 @@ class PeakDataModel(QObject):
                 continue
 
             hint = param_hints.get(param_name.removeprefix(peak_model.prefix), {})
-            if hint=={}:
+            if hint == {}:
                 hint["value"] = peak_model.def_vals.get(param_name.removeprefix(peak_model.prefix), 1)
             try:
                 value = BoundedValue.from_slider_dict(hint)
@@ -340,7 +344,7 @@ class PeakDataModel(QObject):
     def make_model_parameters(self, model_params=None):
         if model_params is None:
             model_params = lmfit.Parameters()
-        for k,v in self._params.items():
+        for k, v in self._params.items():
             assert isinstance(v, BoundedValue)
             model_params.add(k, min=v.min_val, max=v.max_val, value=v.value)
         return model_params
@@ -358,6 +362,7 @@ class PeakDataModel(QObject):
 class QModelParamGroup(QGroupBox):
     paramChanged = pyqtSignal(str)
     request_deletion = pyqtSignal(str)
+
     def __init__(self, peak_model: PeakDataModel, parent=None):
         super().__init__(parent)
         self.data_model = peak_model
@@ -372,6 +377,7 @@ class QModelParamGroup(QGroupBox):
             # Custom slider
             assert isinstance(value, BoundedValue)
             slider = QAdjustableSlider(min_val=value.min_val, max_val=value.max_val, initial=value.value)
+            slider.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             self.sliders[name] = slider
 
             # Label with the parameter name
@@ -409,7 +415,6 @@ class QModelParamGroup(QGroupBox):
             else:
                 slider.value_edit.setText(str(value))
                 slider.value_edit.editingFinished.emit()
-
 
     def _on_param_changed(self, name, value):
         if self._internal_update:
@@ -462,6 +467,7 @@ class MainWindow(QWidget):
             layout.addWidget(box)
 
         self.setWindowTitle("Right-click Deletable GroupBox")
+
 
 if __name__ == "__main__":
     app = QApplication([])

@@ -6,8 +6,6 @@ from GuiLayout import PeakFitter
 
 
 if __name__ == "__main__":
-    import platform
-    print(platform.system())
     app = QApplication(sys.argv)
     window = PeakFitter()
     window.show()
