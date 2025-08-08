@@ -1,3 +1,4 @@
+import math
 import os.path
 
 import lmfit
@@ -40,10 +41,10 @@ class PeakFitter(QMainWindow):
 
         # Use GridSpec to create subplots
         grid = self.figure.add_gridspec(2, 1, height_ratios=[1, 5])
-        self.ax = self.figure.add_subplot(grid[1])                      # Main axes (full width)
-        self.ax2 = self.figure.add_subplot(grid[0], sharex=self.ax)     # Smaller axes (on top) for residuals
-        self.ax2.xaxis.set_visible(False)                               # Hide x-axis for the smaller plot
-        self.ax2.axhline(y=0, color='r', linestyle='--', linewidth=1)   # indicate y=0 line for residuals
+        self.ax = self.figure.add_subplot(grid[1])  # Main axes (full width)
+        self.ax2 = self.figure.add_subplot(grid[0], sharex=self.ax)  # Smaller axes (on top) for residuals
+        self.ax2.xaxis.set_visible(False)  # Hide x-axis for the smaller plot
+        self.ax2.axhline(y=0, color='r', linestyle='--', linewidth=1)  # indicate y=0 line for residuals
         plt.subplots_adjust(hspace=0.0)  # Reduce vertical gap between subplots
         self.canvas = FigureCanvas(self.figure)
         layout.addWidget(self.canvas)
@@ -82,8 +83,33 @@ class PeakFitter(QMainWindow):
 
     def add_model(self, model: lmfit.Model):
         dm = CustomWidgets.PeakDataModel(model)
-        self.components[model.prefix] = group
+        group = CustomWidgets.QModelParamGroup(dm)
+        group.paramChanged.connect(self.update_plot)
+        group.request_deletion.connect(self.delete_model)
+
+        if (len(self.residuals) == 0) or (self.residuals is None):
+            self.residuals = self.y
+
+        self.components[model.prefix] = group       # TODO: stop emitting signals to plot in set_param_directly
         self.model_params_layout.addWidget(group)
+
+        height, pos, w_left, w_right = PeakGuessing.best_guess(self.x, self.residuals)
+        if height > 0:
+            param_names = group.data_model.get_all_params().keys()
+            if any(["amplitude" in p for p in param_names]):
+                group.set_param_directly(model.prefix + "amplitude", CustomWidgets.BoundedValue(height, 0, height * 2))
+
+            if any(["sigma" in p for p in param_names]):
+                group.set_param_directly(model.prefix + "sigma",
+                                         CustomWidgets.BoundedValue(w_left, 0, max(w_left, w_right) * 2))
+
+            if any(["sigma" in p for p in param_names]):
+                group.set_param_directly(model.prefix + "sigma_r",
+                                         CustomWidgets.BoundedValue(w_right, 0, max(w_left, w_right) * 2))
+
+            if any(["center" in p for p in param_names]):
+                group.set_param_directly(model.prefix + "center",
+                                         CustomWidgets.BoundedValue(pos, np.min(self.x), np.max(self.x)))
         self.update_plot(model.prefix)
 
     def slider_changed(self, group, idx, value, callback):
@@ -177,6 +203,9 @@ class PeakFitter(QMainWindow):
     def plot_residuals(self):
         self.ax2.clear()
         self.ax2.plot(self.x, self.residuals, 'k-')
+        residual_std = math.sqrt(np.sum(np.square(self.residuals))/len(self.residuals))
+        self.ax2.text(0.05, 0.95, f"RMSE = {residual_std:.4}", transform=self.ax2.transAxes,
+                 fontsize=14, ha='left', va='top', color='blue')
 
     def optimise(self):
         if self.x.size == 0:

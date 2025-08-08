@@ -266,6 +266,7 @@ class QAdjustableSlider(QWidget):
 
     def reset_min_edit(self):
         self.min_edit.setText(f"{self.min_val:.{self.decimals}f}")
+        self.min_edit.setText(f"{self.min_val:.{self.decimals}f}")
 
     def reset_max_edit(self):
         self.max_edit.setText(f"{self.max_val:.{self.decimals}f}")
