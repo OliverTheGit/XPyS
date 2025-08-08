@@ -22,7 +22,7 @@ def load_specslab_xy_with_error_bars(
         "Separate Channel Data": "yes",
     }
 
-    with open(filepath, 'r') as f:
+    with open(filepath, 'r', encoding='latin1') as f:
         lines = f.readlines()
 
     # Check for WIP flags in comment lines
@@ -50,7 +50,7 @@ def load_specslab_xy_with_error_bars(
         raise ValueError("Required columns 'energy' and 'counts/s' not found.")
 
     # Filter data lines
-    data = np.loadtxt(filepath, comments=comment_prefix, delimiter=delimiter)
+    data = np.loadtxt(filepath, comments=comment_prefix, delimiter=delimiter, encoding='latin1')
 
     # Extract required columns
     energy = data[:, col_indices['energy']]
